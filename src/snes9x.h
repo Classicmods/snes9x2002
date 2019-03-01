@@ -125,7 +125,6 @@ enum
 {
    SNES_MULTIPLAYER5,
    SNES_JOYPAD,
-   SNES_MOUSE_SWAPPED,
    SNES_MOUSE,
    SNES_SUPERSCOPE,
    SNES_JUSTIFIER,
@@ -253,7 +252,6 @@ typedef struct
    bool8  TraceDSP;
 
    // Joystick options
-   bool8  SwapJoypads;
    bool8  JoystickEnabled;
 
    // ROM timing options (see also H_Max above)
@@ -375,16 +373,14 @@ typedef struct
    uint8 Mode7Hack;
 } SSNESGameFixes;
 
-START_EXTERN_C
 extern SSettings Settings;
 extern SCPUState CPU;
 extern SSNESGameFixes SNESGameFixes;
 extern char String [513];
 
-void S9xExit();
+void S9xExit(void);
 void S9xMessage(int type, int number, const char* message);
-void S9xLoadSDD1Data();
-END_EXTERN_C
+void S9xLoadSDD1Data(void);
 
 enum
 {

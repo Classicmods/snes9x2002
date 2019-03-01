@@ -60,7 +60,7 @@
 extern FxInit_s SuperFX;
 extern FxRegs_s GSU;
 
-void S9xUpdateHTimer()
+void S9xUpdateHTimer(void)
 {
    if (PPU.HTimerEnabled)
    {
@@ -117,7 +117,7 @@ void S9xUpdateHTimer()
    }
 }
 
-void S9xFixColourBrightness()
+void S9xFixColourBrightness(void)
 {
    IPPU.XB = mul_brightness [PPU.Brightness];
    if (Settings.SixteenBit)
@@ -375,14 +375,16 @@ void S9xSetPPU(uint8 Byte, uint16 Address)
          {
             static uint16 IncCount [4] = { 0, 32, 64, 128 };
             static uint16 Shift [4] = { 0, 5, 6, 7 };
+            uint8 i;
+
 #ifdef DEBUGGER
             missing.vram_full_graphic_inc = (Byte & 0x0c) >> 2;
 #endif
-            PPU.VMA.Increment = 1;
-            uint8 i = (Byte & 0x0c) >> 2;
+            PPU.VMA.Increment        = 1;
+            i                        = (Byte & 0x0c) >> 2;
             PPU.VMA.FullGraphicCount = IncCount [i];
-            PPU.VMA.Mask1 = IncCount [i] * 8 - 1;
-            PPU.VMA.Shift = Shift [i];
+            PPU.VMA.Mask1            = IncCount [i] * 8 - 1;
+            PPU.VMA.Shift            = Shift [i];
          }
          else
             PPU.VMA.FullGraphicCount = 0;
@@ -1400,7 +1402,7 @@ void S9xSetCPU(uint8 byte, uint16 Address)
          }
          break;
       case 0x4017:
-         break;
+         return;
       default:
 #ifdef DEBUGGER
          missing.unknowncpu_write = Address;
@@ -1850,20 +1852,12 @@ uint8 S9xGetCPU(uint16 Address)
       case 0x4016:
       {
          if (Memory.FillRAM [0x4016] & 1)
-         {
-            if ((!Settings.SwapJoypads &&
-                  IPPU.Controller == SNES_MOUSE_SWAPPED) ||
-                  (Settings.SwapJoypads &&
-                   IPPU.Controller == SNES_MOUSE))
-            {
-               if (++PPU.MouseSpeed [0] > 2)
-                  PPU.MouseSpeed [0] = 0;
-            }
             return (0);
-         }
 
-         int ind = Settings.SwapJoypads ? 1 : 0;
-         byte = IPPU.Joypads[ind] >> (PPU.Joypad1ButtonReadPos ^ 15);
+         if (PPU.Joypad1ButtonReadPos >= 16) // Joypad 1 is enabled
+            return 1;
+
+         byte = IPPU.Joypads[0] >> (PPU.Joypad1ButtonReadPos ^ 15);
          PPU.Joypad1ButtonReadPos++;
          return (byte & 1);
       }
@@ -1876,26 +1870,17 @@ uint8 S9xGetCPU(uint16 Address)
             {
             case SNES_MULTIPLAYER5:
                return (2);
-            case SNES_MOUSE_SWAPPED:
-               if (Settings.SwapJoypads && ++PPU.MouseSpeed [0] > 2)
-                  PPU.MouseSpeed [0] = 0;
-               break;
-
             case SNES_MOUSE:
-               if (!Settings.SwapJoypads && ++PPU.MouseSpeed [0] > 2)
-                  PPU.MouseSpeed [0] = 0;
                break;
             }
             return (0x00);
          }
 
-         int ind = Settings.SwapJoypads ? 0 : 1;
-
          if (IPPU.Controller == SNES_MULTIPLAYER5)
          {
             if (Memory.FillRAM [0x4201] & 0x80)
             {
-               byte = ((IPPU.Joypads[ind] >> (PPU.Joypad2ButtonReadPos ^ 15)) & 1) |
+               byte = ((IPPU.Joypads[1] >> (PPU.Joypad2ButtonReadPos ^ 15)) & 1) |
                       (((IPPU.Joypads[2] >> (PPU.Joypad2ButtonReadPos ^ 15)) & 1) << 1);
                PPU.Joypad2ButtonReadPos++;
                return (byte);
@@ -1908,7 +1893,11 @@ uint8 S9xGetCPU(uint16 Address)
                return (byte);
             }
          }
-         return ((IPPU.Joypads[ind] >> (PPU.Joypad2ButtonReadPos++ ^ 15)) & 1);
+         
+         if (PPU.Joypad2ButtonReadPos >= 16) // Joypad 2 is enabled
+            return 1;
+         
+         return ((IPPU.Joypads[1] >> (PPU.Joypad2ButtonReadPos++ ^ 15)) & 1);
       }
       default:
 #ifdef DEBUGGER
@@ -2144,10 +2133,11 @@ uint8 S9xGetCPU(uint16 Address)
    return (Memory.FillRAM[Address]);
 }
 
-void S9xResetPPU()
+void S9xResetPPU(void)
 {
    uint8 B;
    int Sprite;
+   int c;
 
    PPU.BGMode = 0;
    PPU.BG3Priority = 0;
@@ -2184,7 +2174,6 @@ void S9xResetPPU()
    PPU.ClipWindow2Inside[4] = PPU.ClipWindow2Inside[5] = TRUE;
 
    PPU.CGFLIP = 0;
-   int c;
    for (c = 0; c < 256; c++)
    {
       IPPU.Red [c] = (c & 7) << 2;
@@ -2324,8 +2313,7 @@ void S9xProcessMouse(int which1)
    int x, y;
    uint32 buttons;
 
-   if ((IPPU.Controller == SNES_MOUSE || IPPU.Controller == SNES_MOUSE_SWAPPED) &&
-         S9xReadMousePosition(which1, &x, &y, &buttons))
+   if (IPPU.Controller == SNES_MOUSE && S9xReadMousePosition(which1, &x, &y, &buttons))
    {
       int delta_x, delta_y;
 #define MOUSE_SIGNATURE 0x1
@@ -2378,14 +2366,11 @@ void S9xProcessMouse(int which1)
       else
          IPPU.Mouse [which1] |= delta_y << 24;
 
-      if (IPPU.Controller == SNES_MOUSE_SWAPPED)
-         IPPU.Joypads [0] = IPPU.Mouse [which1];
-      else
-         IPPU.Joypads [1] = IPPU.Mouse [which1];
+      IPPU.Joypads [1] = IPPU.Mouse [which1];
    }
 }
 
-void ProcessSuperScope()
+void ProcessSuperScope(void)
 {
    int x, y;
    uint32 buttons;
@@ -2424,12 +2409,6 @@ void S9xNextController(void)
       IPPU.Controller = SNES_JOYPAD;
       break;
    case SNES_JOYPAD:
-      if (Settings.MouseMaster)
-      {
-         IPPU.Controller = SNES_MOUSE_SWAPPED;
-         break;
-      }
-   case SNES_MOUSE_SWAPPED:
       if (Settings.MouseMaster)
       {
          IPPU.Controller = SNES_MOUSE;
@@ -2501,16 +2480,15 @@ void S9xUpdateJoypads(void)
          PPU.Joypad2ButtonReadPos = 0;
          PPU.Joypad3ButtonReadPos = 16;
       }
-      int ind = Settings.SwapJoypads ? 1 : 0;
 
-      Memory.FillRAM [0x4218] = (uint8) IPPU.Joypads [ind];
-      Memory.FillRAM [0x4219] = (uint8)(IPPU.Joypads [ind] >> 8);
-      Memory.FillRAM [0x421a] = (uint8) IPPU.Joypads [ind ^ 1];
-      Memory.FillRAM [0x421b] = (uint8)(IPPU.Joypads [ind ^ 1] >> 8);
+      Memory.FillRAM [0x4218] = (uint8) IPPU.Joypads [0];
+      Memory.FillRAM [0x4219] = (uint8)(IPPU.Joypads [0] >> 8);
+      Memory.FillRAM [0x421a] = (uint8) IPPU.Joypads [1];
+      Memory.FillRAM [0x421b] = (uint8)(IPPU.Joypads [1] >> 8);
       if (Memory.FillRAM [0x4201] & 0x80)
       {
-         Memory.FillRAM [0x421c] = (uint8) IPPU.Joypads [ind];
-         Memory.FillRAM [0x421d] = (uint8)(IPPU.Joypads [ind] >> 8);
+         Memory.FillRAM [0x421c] = (uint8) IPPU.Joypads [0];
+         Memory.FillRAM [0x421d] = (uint8)(IPPU.Joypads [0] >> 8);
          Memory.FillRAM [0x421e] = (uint8) IPPU.Joypads [2];
          Memory.FillRAM [0x421f] = (uint8)(IPPU.Joypads [2] >> 8);
       }
@@ -2531,11 +2509,13 @@ void S9xSuperFXExec(void)
       if ((Memory.FillRAM [0x3000 + GSU_SFR] & FLG_G) &&
             (Memory.FillRAM [0x3000 + GSU_SCMR] & 0x18) == 0x18)
       {
+         int GSUStatus;
+
          if (!Settings.WinterGold)
             FxEmulate(~0);
          else
             FxEmulate((Memory.FillRAM [0x3000 + GSU_CLSR] & 1) ? 700 : 350);
-         int GSUStatus = Memory.FillRAM [0x3000 + GSU_SFR] |
+         GSUStatus = Memory.FillRAM [0x3000 + GSU_SFR] |
                          (Memory.FillRAM [0x3000 + GSU_SFR + 1] << 8);
          if ((GSUStatus & (FLG_G | FLG_IRQ)) == FLG_IRQ)
          {
